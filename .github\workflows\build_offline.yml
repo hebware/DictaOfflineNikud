@@ -1,1 +1,67 @@
 
+name: Build Dicta OFFLINE Final - 100% Offline
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Create service file
+        shell: pwsh
+        run: |
+          @"
+          from fastapi import FastAPI
+          from fastapi.responses import PlainTextResponse
+          from pydantic import BaseModel
+          app = FastAPI()
+          class Req(BaseModel):
+              text: str
+          nak = None
+          try:
+              from nakdimon import Nakdimon
+              nak = Nakdimon()
+              print("Dicta OFFLINE ready")
+          except Exception as e:
+              print(f"Fail: {e}")
+          def add_nikud(t):
+              if nak and hasattr(nak, 'nakdan'):
+                  r = nak.nakdan(t)
+                  cleaned = ""
+                  for c in r:
+                      if 0x0591 <= ord(c) <= 0x05AF:
+                          continue
+                      cleaned += c
+                  return cleaned
+              return t
+          @app.post("/nikud", response_class=PlainTextResponse)
+          def nikud_plain(req: Req):
+              return add_nikud(req.text)
+          @app.get("/")
+          def root():
+              return {"status": "Dicta OFFLINE", "offline": True}
+          if __name__ == "__main__":
+              import uvicorn
+              uvicorn.run(app, host="127.0.0.1", port=8080)
+          "@ | Set-Content dicta_offline_service.py -Encoding UTF8
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Build EXE OFFLINE
+        shell: pwsh
+        run: |
+          pip install --upgrade pip
+          pip install nakdimon fastapi uvicorn pyinstaller
+          python -c "from nakdimon import Nakdimon; m=Nakdimon(); print(m.nakdan('שלום עולם'))"
+          pyinstaller --onefile dicta_offline_service.py -n dicta_offline_x64 --clean --noconfirm --collect-data nakdimon --collect-all nakdimon --hidden-import nakdimon --hidden-import torch
+          dir dist
+          echo "EXE size:"
+          (Get-Item dist/dicta_offline_x64.exe).Length / 1MB
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dicta-offline-exe
+          path: dist/dicta_offline_x64.exe
+
