@@ -1,13 +1,12 @@
 
-name: Build Dicta WITH Torch - Full Offline
+name: Build Hanakdan - 333MB Offline
 on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-
-      - name: Create service with debug
+      - name: Create service
         shell: pwsh
         run: |
           @"
@@ -19,18 +18,17 @@ jobs:
           class Req(BaseModel):
               text: str
           nak = None
-          load_error = ""
+          load_log = ""
           try:
-              print("Loading Nakdimon...")
+              print("Loading Hanakdan...")
               from nakdimon import Nakdimon
               nak = Nakdimon()
               test = nak.nakdan("שלום עולם")
               print(f"Test: {test}")
-              load_error = f"OK - {test}"
+              load_log = f"OK - {test}"
           except Exception as e:
-              load_error = f"Failed: {e} {traceback.format_exc()}"
-              print(load_error)
-              nak = None
+              load_log = f"Failed: {e} {traceback.format_exc()}"
+              print(load_log)
           def add_nikud(t):
               if nak is None:
                   return t
@@ -41,38 +39,38 @@ jobs:
                   return t
           @app.get("/", response_class=PlainTextResponse)
           def root():
-              return f"nak={nak is not None} error={load_error}"
+              return f"Hanakdan 333MB nak={nak is not None} {load_log}"
           @app.post("/nikud", response_class=PlainTextResponse)
           def nikud_plain(req: Req):
               return PlainTextResponse(add_nikud(req.text), media_type="text/plain; charset=utf-8")
           @app.post("/nikud_json")
           def nikud_json(req: Req):
-              return JSONResponse({"nikud": add_nikud(req.text), "nak": nak is not None, "error": load_error})
+              return JSONResponse({"nikud": add_nikud(req.text), "nak": nak is not None})
           @app.post("/debug")
           def debug(req: Req):
-              return {"input": req.text, "output": add_nikud(req.text), "nak": nak is not None, "error": load_error}
+              return {"input": req.text, "output": add_nikud(req.text), "nak": nak is not None}
           if __name__ == "__main__":
               import uvicorn
               uvicorn.run(app, host="127.0.0.1", port=8080)
-          "@ | Set-Content dicta_service.py -Encoding UTF8
+          "@ | Set-Content hanakdan_service.py -Encoding UTF8
 
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
-      - name: Build EXE WITH Torch (will be big ~400MB)
+      - name: Build 333MB EXE
         shell: pwsh
         run: |
           pip install --upgrade pip
           pip install nakdimon fastapi uvicorn pyinstaller torch --extra-index-url https://download.pytorch.org/whl/cpu
-          python -c "from nakdimon import Nakdimon; n=Nakdimon(); print(n.nakdan('שלום עולם'))"
-          Write-Host "Building with torch..."
-          pyinstaller --onefile dicta_service.py -n dicta_offline_x64 --clean --noconfirm --collect-data nakdimon --collect-all nakdimon --collect-all torch --hidden-import torch --hidden-import nakdimon --hidden-import torch --hidden-import torch.nn --hidden-import torch.nn.functional
+          python -c "from nakdimon import Nakdimon; n=Nakdimon(); print('Test:', n.nakdan('שלום עולם'))"
+          Write-Host "Building 333MB Hanakdan..."
+          pyinstaller --onefile hanakdan_service.py -n hanakdan_x64 --clean --noconfirm --collect-data nakdimon --collect-all nakdimon --collect-all torch --hidden-import torch --hidden-import torch.nn
           dir dist
-          $size = (Get-Item dist/dicta_offline_x64.exe).Length / 1MB
-          Write-Host "EXE size: $size MB - includes torch, should work!"
+          $size = (Get-Item dist/hanakdan_x64.exe).Length / 1MB
+          Write-Host "EXE size: $size MB"
 
       - uses: actions/upload-artifact@v5
         with:
-          name: dicta-with-torch
-          path: dist/dicta_offline_x64.exe
+          name: hanakdan-333mb-exe
+          path: dist/hanakdan_x64.exe
