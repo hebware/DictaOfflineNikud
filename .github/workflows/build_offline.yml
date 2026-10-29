@@ -1,5 +1,5 @@
 
-name: Build Dicta OFFLINE Final - 100% Offline
+name: Build Dicta FIXED - With All Endpoints
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -12,7 +12,7 @@ jobs:
         run: |
           @"
           from fastapi import FastAPI
-          from fastapi.responses import PlainTextResponse
+          from fastapi.responses import PlainTextResponse, JSONResponse
           from pydantic import BaseModel
           app = FastAPI()
           class Req(BaseModel):
@@ -21,25 +21,33 @@ jobs:
           try:
               from nakdimon import Nakdimon
               nak = Nakdimon()
-              print("Dicta OFFLINE ready")
+              print("Dicta loaded")
           except Exception as e:
               print(f"Fail: {e}")
           def add_nikud(t):
               if nak and hasattr(nak, 'nakdan'):
                   r = nak.nakdan(t)
-                  cleaned = ""
-                  for c in r:
-                      if 0x0591 <= ord(c) <= 0x05AF:
-                          continue
-                      cleaned += c
-                  return cleaned
+                  return "".join(c for c in r if not (0x0591 <= ord(c) <= 0x05AF))
               return t
+          @app.get("/", response_class=PlainTextResponse)
+          def root():
+              return f"Dicta OFFLINE nak={nak is not None} endpoints=/nikud,/nikud_json,/debug"
           @app.post("/nikud", response_class=PlainTextResponse)
           def nikud_plain(req: Req):
-              return add_nikud(req.text)
-          @app.get("/")
-          def root():
-              return {"status": "Dicta OFFLINE", "offline": True}
+              result = add_nikud(req.text)
+              print(f"REQ: {req.text!r} -> {result!r}")
+              return PlainTextResponse(result, media_type="text/plain; charset=utf-8")
+          @app.post("/nikud_json")
+          def nikud_json(req: Req):
+              result = add_nikud(req.text)
+              return JSONResponse({"text": req.text, "nikud": result}, media_type="application/json; charset=utf-8")
+          @app.post("/debug")
+          def debug(req: Req):
+              result = add_nikud(req.text)
+              return {"input": req.text, "output": result, "nak": nak is not None}
+          @app.post("/nikud_text", response_class=PlainTextResponse)
+          def nikud_text(req: Req):
+              return PlainTextResponse(add_nikud(req.text), media_type="text/plain; charset=utf-8")
           if __name__ == "__main__":
               import uvicorn
               uvicorn.run(app, host="127.0.0.1", port=8080)
@@ -49,18 +57,16 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Build EXE OFFLINE
+      - name: Build EXE
         shell: pwsh
         run: |
-          pip install --upgrade pip
           pip install nakdimon fastapi uvicorn pyinstaller
-          python -c "from nakdimon import Nakdimon; m=Nakdimon(); print(m.nakdan('שלום עולם'))"
-          pyinstaller --onefile dicta_offline_service.py -n dicta_offline_x64 --clean --noconfirm --collect-data nakdimon --collect-all nakdimon --hidden-import nakdimon --hidden-import torch
+          python -c "from nakdimon import Nakdimon; n=Nakdimon(); print(n.nakdan('שלום עולם'))"
+          pyinstaller --onefile dicta_offline_service.py -n dicta_offline_x64 --clean --noconfirm --collect-data nakdimon --collect-all nakdimon --hidden-import nakdimon
           dir dist
-          echo "EXE size:"
-          (Get-Item dist/dicta_offline_x64.exe).Length / 1MB
+          Write-Host "EXE built - should have /nikud endpoints"
 
       - uses: actions/upload-artifact@v5
         with:
-          name: dicta-offline-exe
+          name: dicta-fixed-exe
           path: dist/dicta_offline_x64.exe
